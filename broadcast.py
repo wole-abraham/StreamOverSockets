@@ -67,12 +67,20 @@ async def offer(request: Request):
 
 @app.post("/viewer")
 async def viewer(request: Request):
+    """
+    Viewer endpoint: attach relayed latest_video to a new RTCPeerConnection
+    and return an SDP answer. Avoids transceiver direction None errors
+    by adding a sendonly transceiver BEFORE applying the remote offer.
+    """
     global latest_video
     if latest_video is None:
         return {"error": "No live stream yet"}
 
     params = await request.json()
-    offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+    try:
+        offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+    except Exception as e:
+        return {"error": f"invalid offer: {e}"}
 
     config = RTCConfiguration(iceServers=[
         RTCIceServer(urls=["stun:stun.l.google.com:19302"]),
@@ -89,20 +97,32 @@ async def viewer(request: Request):
             asyncio.create_task(pc.close())
             pcs.discard(pc)
 
-    # 1️⃣ Add the track FIRST (explicitly "sendonly")
-    sender = pc.addTrack(latest_video)
+    try:
+        # 1) Create a transceiver that explicitly says server will SEND video
+        #    (browser's offer will be recvonly). Adding this BEFORE applying offer
+        #    prevents direction None errors during answer generation.
+        pc.addTransceiver("video", direction="sendonly")
 
-    # 2️⃣ Then set the remote description (browser’s offer)
-    await pc.setRemoteDescription(offer)
+        # 2) Apply the viewer's offer (remote description)
+        await pc.setRemoteDescription(offer)
 
-    # 3️⃣ Make sure direction is explicitly "sendonly"
-    for t in pc.getTransceivers():
-        if t.kind == "video":
-            t.direction = "sendonly"
+        # 3) Attach the relayed track so the server actually sends frames to viewer
+        #    latest_video is expected to be a MediaStreamTrack (relay.subscribe(track) earlier)
+        pc.addTrack(latest_video)
 
-    # 4️⃣ Create and apply the SDP answer
-    answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
+        # 4) Create and set local description (the answer)
+        answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
 
-    print("Viewer connection established")
-    return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+        # 5) Return SDP answer to viewer
+        return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+
+    except Exception as exc:
+        # Clean up and return useful error instead of crashing
+        print("viewer handler error:", exc)
+        try:
+            await pc.close()
+        except Exception:
+            pass
+        pcs.discard(pc)
+        return {"error": f"server error: {exc}"}
