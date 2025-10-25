@@ -14,7 +14,13 @@
     const status = document.getElementById("status");
 
     async function start() {
-      const pc = new RTCPeerConnection();
+      // Create the PeerConnection
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: ["stun:stun.l.google.com:19302"] },
+          { urls: ["turn:69.62.122.230:3478"], username: "wole", credential: "password123" }
+        ]
+      });
 
       pc.ontrack = (event) => {
         console.log("Receiving stream...");
@@ -28,6 +34,10 @@
           status.textContent = "⚠️ Connection lost";
         }
       };
+
+      // 🔧 THIS IS THE CRITICAL LINE 🔧
+      // It tells the browser "I want to receive a video stream"
+      pc.addTransceiver("video", { direction: "recvonly" });
 
       // Create and send the viewer offer
       const offer = await pc.createOffer();
