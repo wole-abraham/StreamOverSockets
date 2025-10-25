@@ -23,12 +23,12 @@ async def offer(request: Request):
     # Use only STUN (Google)
     config = RTCConfiguration(
     iceServers=[
-        {"urls": ["stun:stun.l.google.com:19302"]},
-        {
-            "urls": [f"turn:69.62.122.230:3478"],
-            "username": "9e5ea9665c2529f427000d7a",
-            "credential": "KCCPb8Ase9yyvB8Z"
-        }
+        RTCIceServer(urls=["stun:stun.l.google.com:19302"]),
+        RTCIceServer(
+            urls=[f"turn:69.62.122.230:3478"],
+            username="wole",
+            credential="password123"
+        )
     ]
 )
 
