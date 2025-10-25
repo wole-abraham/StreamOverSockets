@@ -1,31 +1,51 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>WebRTC Live View</title>
+  <title>Live Stream Viewer</title>
+  <meta charset="utf-8" />
 </head>
 <body>
-  <h2>Live Stream</h2>
-  <video id="video" autoplay playsinline controls></video>
+  <h2>Live Stream Viewer</h2>
+  <video id="video" autoplay playsinline controls style="width: 640px; height: 480px; background: #000;"></video>
+  <p id="status">Connecting...</p>
 
   <script>
-    const video = document.getElementById('video');
-    const pc = new RTCPeerConnection();
-
-    pc.ontrack = event => {
-      video.srcObject = event.streams[0];
-    };
+    const video = document.getElementById("video");
+    const status = document.getElementById("status");
 
     async function start() {
+      const pc = new RTCPeerConnection();
+
+      pc.ontrack = (event) => {
+        console.log("Receiving stream...");
+        video.srcObject = event.streams[0];
+        status.textContent = "✅ Live stream connected";
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log("ICE state:", pc.iceConnectionState);
+        if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+          status.textContent = "⚠️ Connection lost";
+        }
+      };
+
+      // Create and send the viewer offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      const response = await fetch('/offer', {
-        method: 'POST',
+      const response = await fetch("/viewer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(pc.localDescription),
-        headers: {'Content-Type': 'application/json'}
       });
 
       const answer = await response.json();
+
+      if (answer.error) {
+        status.textContent = "⛔ " + answer.error;
+        return;
+      }
+
       await pc.setRemoteDescription(answer);
     }
 
