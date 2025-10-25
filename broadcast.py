@@ -81,9 +81,6 @@ async def viewer(request: Request):
     pc = RTCPeerConnection(configuration=config)
     pcs.add(pc)
 
-    # Add video track (recvonly on browser side)
-    pc.addTrack(latest_video)
-
     @pc.on("iceconnectionstatechange")
     def on_state_change():
         print("Viewer ICE state:", pc.iceConnectionState)
@@ -91,17 +88,17 @@ async def viewer(request: Request):
             asyncio.create_task(pc.close())
             pcs.discard(pc)
 
+    # Add a "recvonly" transceiver for video BEFORE setting the remote description
+    pc.addTransceiver("video", direction="recvonly")
+
+    # Now apply the viewer's offer
     await pc.setRemoteDescription(offer)
 
-    # Important: ensure offer contains recvonly tracks
-    for transceiver in pc.getTransceivers():
-        if transceiver.kind == "video" and transceiver.direction is None:
-            transceiver.direction = "sendonly"
+    # Add the latest video track to send video to this viewer
+    pc.addTrack(latest_video)
 
+    # Create and set local description (the answer)
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
-
-    # Wait for ICE candidates to complete (optional but safer)
-    await asyncio.sleep(1)
 
     return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
