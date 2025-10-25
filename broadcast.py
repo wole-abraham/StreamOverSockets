@@ -78,6 +78,7 @@ async def viewer(request: Request):
         RTCIceServer(urls=["stun:stun.l.google.com:19302"]),
         RTCIceServer(urls=["turn:69.62.122.230:3478"], username="wole", credential="password123")
     ])
+
     pc = RTCPeerConnection(configuration=config)
     pcs.add(pc)
 
@@ -88,17 +89,20 @@ async def viewer(request: Request):
             asyncio.create_task(pc.close())
             pcs.discard(pc)
 
-    # Add a "recvonly" transceiver for video BEFORE setting the remote description
-    pc.addTransceiver("video", direction="recvonly")
+    # 1️⃣ Add the track FIRST (explicitly "sendonly")
+    sender = pc.addTrack(latest_video)
 
-    # Now apply the viewer's offer
+    # 2️⃣ Then set the remote description (browser’s offer)
     await pc.setRemoteDescription(offer)
 
-    # Add the latest video track to send video to this viewer
-    pc.addTrack(latest_video)
+    # 3️⃣ Make sure direction is explicitly "sendonly"
+    for t in pc.getTransceivers():
+        if t.kind == "video":
+            t.direction = "sendonly"
 
-    # Create and set local description (the answer)
+    # 4️⃣ Create and apply the SDP answer
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
 
+    print("Viewer connection established")
     return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
