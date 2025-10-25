@@ -67,7 +67,6 @@ async def offer(request: Request):
 
 @app.post("/viewer")
 async def viewer(request: Request):
-    """Handle viewers connecting to watch the stream"""
     global latest_video
     if latest_video is None:
         return {"error": "No live stream yet"}
@@ -79,21 +78,30 @@ async def viewer(request: Request):
         RTCIceServer(urls=["stun:stun.l.google.com:19302"]),
         RTCIceServer(urls=["turn:69.62.122.230:3478"], username="wole", credential="password123")
     ])
-
     pc = RTCPeerConnection(configuration=config)
     pcs.add(pc)
 
+    # Add video track (recvonly on browser side)
     pc.addTrack(latest_video)
 
     @pc.on("iceconnectionstatechange")
-    def on_ice_state():
+    def on_state_change():
         print("Viewer ICE state:", pc.iceConnectionState)
-        if pc.iceConnectionState in ["failed", "closed", "disconnected"]:
-            pcs.discard(pc)
+        if pc.iceConnectionState in ("failed", "closed", "disconnected"):
             asyncio.create_task(pc.close())
+            pcs.discard(pc)
 
     await pc.setRemoteDescription(offer)
+
+    # Important: ensure offer contains recvonly tracks
+    for transceiver in pc.getTransceivers():
+        if transceiver.kind == "video" and transceiver.direction is None:
+            transceiver.direction = "sendonly"
+
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
+
+    # Wait for ICE candidates to complete (optional but safer)
+    await asyncio.sleep(1)
 
     return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
